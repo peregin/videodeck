@@ -501,8 +501,8 @@ export default function VideoDeck() {
                 <Clapperboard size={18} className="text-emerald-300" />
               </div>
               <div>
-                <p className="text-lg font-black tracking-tight text-white">VideoDeck Render Studio</p>
-                <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Kokoro + Remotion Pipeline</p>
+                <p className="text-lg font-black tracking-tight text-white">VideoDeck Studio</p>
+                <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Text to speech and video rendering pipeline</p>
               </div>
             </div>
 
