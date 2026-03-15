@@ -4,14 +4,12 @@ import { fileURLToPath } from 'url';
 import { mkdir, rm } from 'fs/promises';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, selectComposition } from '@remotion/renderer';
-import { KokoroTTS } from 'kokoro-js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
 const renderEntry = path.join(projectRoot, 'render', 'index.tsx');
 const rendersRoot = path.join(projectRoot, 'renders');
-const app = express();
-const port = Number(process.env.PORT || 3210);
+const defaultPort = Number(process.env.PORT || 3210);
 const fps = 30;
 const defaultStillSeconds = 3;
 
@@ -81,6 +79,7 @@ const setJobStatus = (jobId, status, message) => {
 
 const getKokoro = async () => {
   if (!kokoroPromise) {
+    const { KokoroTTS } = await import('kokoro-js');
     kokoroPromise = KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
       dtype: 'q8',
       device: 'cpu',
@@ -162,7 +161,7 @@ const runRenderJob = async (jobId, payload) => {
 
         const seconds = audio.audio.length / audio.sampling_rate;
         durationInFrames = Math.max(Math.round((seconds + 0.6) * fps), defaultStillSeconds * fps);
-        audioUrl = `http://localhost:${port}/renders/${jobId}/slide-${index}.wav`;
+        audioUrl = `http://localhost:${defaultPort}/renders/${jobId}/slide-${index}.wav`;
       } else {
         const estimatedSeconds = Math.max(defaultStillSeconds, Math.ceil(slide.body.join(' ').split(/\s+/).filter(Boolean).length / 3));
         durationInFrames = estimatedSeconds * fps;
@@ -261,54 +260,68 @@ const runRenderJob = async (jobId, payload) => {
   }
 };
 
-app.use(express.json({ limit: '2mb' }));
-app.use((_, response, next) => {
-  response.setHeader('Access-Control-Allow-Origin', '*');
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  next();
-});
-app.use('/renders', express.static(rendersRoot));
-
-app.get('/api/render/:jobId', (request, response) => {
-  const job = jobs.get(request.params.jobId);
-  if (!job) {
-    response.status(404).json({ message: 'Render job not found.' });
-    return;
-  }
-
-  response.json(job);
-});
-
-app.post('/api/render', async (request, response) => {
-  const { markdown, voice, slideTheme, transition, showCaptions } = request.body ?? {};
-
-  if (typeof markdown !== 'string' || !markdown.trim()) {
-    response.status(400).send('`markdown` is required.');
-    return;
-  }
-
-  if (typeof voice !== 'string' || !voice.trim()) {
-    response.status(400).send('`voice` is required.');
-    return;
-  }
-
-  const job = createJob();
-  response.status(202).json(job);
-
-  void runRenderJob(job.jobId, {
-    markdown,
-    voice,
-    slideTheme,
-    transition,
-    showCaptions: Boolean(showCaptions),
+const attachRenderRoutes = (app) => {
+  app.use(express.json({ limit: '2mb' }));
+  app.use((_, response, next) => {
+    response.setHeader('Access-Control-Allow-Origin', '*');
+    response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    next();
   });
-});
+  app.use('/renders', express.static(rendersRoot));
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  app.get('/api/render/:jobId', (request, response) => {
+    const job = jobs.get(request.params.jobId);
+    if (!job) {
+      response.status(404).json({ message: 'Render job not found.' });
+      return;
+    }
+
+    response.json(job);
+  });
+
+  app.post('/api/render', async (request, response) => {
+    const { markdown, voice, slideTheme, transition, showCaptions } = request.body ?? {};
+
+    if (typeof markdown !== 'string' || !markdown.trim()) {
+      response.status(400).send('`markdown` is required.');
+      return;
+    }
+
+    if (typeof voice !== 'string' || !voice.trim()) {
+      response.status(400).send('`voice` is required.');
+      return;
+    }
+
+    const job = createJob();
+    response.status(202).json(job);
+
+    void runRenderJob(job.jobId, {
+      markdown,
+      voice,
+      slideTheme,
+      transition,
+      showCaptions: Boolean(showCaptions),
+    });
+  });
+};
+
+const createRenderApp = () => {
+  const app = express();
+  attachRenderRoutes(app);
+  return app;
+};
+
+const startRenderServer = async (port = defaultPort) => {
   await mkdir(rendersRoot, { recursive: true });
-  app.listen(port, () => {
+  const app = createRenderApp();
+
+  return app.listen(port, () => {
     console.log(`Video render server listening on http://localhost:${port}`);
   });
+};
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await startRenderServer(defaultPort);
 }
 
-export { app, runRenderJob };
+export { attachRenderRoutes, createRenderApp, defaultPort, runRenderJob, startRenderServer };

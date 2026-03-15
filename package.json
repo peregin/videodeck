@@ -4,10 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "node server.mjs",
+    "build": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && vite build",
     "preview": "vite preview",
-    "render-server": "node render/server.mjs"
+    "render-server": "node render/server.mjs",
+    "start": "NODE_ENV=production node server.mjs",
+    "vite-dev": "vite"
   },
   "dependencies": {
     "@remotion/bundler": "^4.0.435",

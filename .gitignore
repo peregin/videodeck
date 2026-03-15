@@ -3,3 +3,6 @@ dist
 package-lock.json
 renders
 .remotion
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
