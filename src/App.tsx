@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 
 const KOKORO_VOICES = [
+  { id: 'af_sarah', name: 'Sarah' },
   { id: 'af_kore', name: 'Kore' },
   { id: 'am_fenrir', name: 'Fenrir' },
   { id: 'am_puck', name: 'Puck' },
@@ -38,7 +39,7 @@ const TRANSITIONS = [
 
 const DEFAULT_MARKDOWN = `
 # Welcome to VideoDeck
-![Tech](https://images.unsplash.com/photo-1642726197634-2a21f764220a?w=1200&q=80)
+![Tech](https://images.unsplash.com/photo-1498940757830-82f7813bf178?w=400&q=80)
 Speaker Note: Welcome to VideoDeck. This cut is rendered end to end with Kokoro narration and Remotion video rendering.
 ---
 ## How it Works
@@ -48,6 +49,7 @@ Speaker Note: The pipeline parses your slides, synthesizes narration, builds the
 ---
 ## Visual Media
 Each slide can include a title, body copy, and a hero image.
+![Visual](https://images.unsplash.com/photo-1773001899177-7f642f65fd4c?w=800&q=80)
 Speaker Note: Images stay on-screen while the narration track for the slide plays, with captions enabled if you want them.
 ---
 ## Final Output
