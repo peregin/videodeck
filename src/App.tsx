@@ -33,12 +33,19 @@ const SLIDE_THEMES = {
   classic: 'bg-white text-slate-900',
   neon: 'bg-black text-cyan-400 border-2 border-cyan-500/30',
   warm: 'bg-orange-50 text-stone-800',
+  ocean: 'bg-sky-950 text-cyan-50',
+  editorial: 'bg-zinc-100 text-zinc-900',
+  sunset: 'bg-rose-950 text-orange-50',
+  forest: 'bg-emerald-950 text-emerald-50',
 } as const;
 
 const TRANSITIONS = [
   { id: 'fade', name: 'Smooth Fade' },
   { id: 'slide', name: 'Horizontal Slide' },
   { id: 'zoom', name: 'Dynamic Zoom' },
+  { id: 'rise', name: 'Vertical Rise' },
+  { id: 'flip', name: 'Flip In' },
+  { id: 'drift', name: 'Soft Drift' },
 ] as const;
 
 const DEFAULT_MARKDOWN = `
@@ -217,6 +224,8 @@ const formatDuration = (seconds: number) => {
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
+
+const formatLabel = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 
 const renderInlineMarkdown = (text: string) => {
   const tokens = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean);
@@ -568,21 +577,17 @@ export default function VideoDeck() {
 
                 <div className="space-y-2">
                   <span className="text-xs font-semibold text-slate-300">Presentation Theme</span>
-                  <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={slideTheme}
+                    onChange={(event) => setSlideTheme(event.target.value as keyof typeof SLIDE_THEMES)}
+                    className="w-full rounded-lg border border-white/5 bg-[#1a1a1e] p-2 text-xs outline-none focus:ring-1 focus:ring-emerald-500"
+                  >
                     {Object.keys(SLIDE_THEMES).map((item) => (
-                      <button
-                        key={item}
-                        onClick={() => setSlideTheme(item as keyof typeof SLIDE_THEMES)}
-                        className={`rounded-lg border px-3 py-2 text-[10px] font-bold uppercase transition ${
-                          slideTheme === item
-                            ? 'border-emerald-500/50 bg-emerald-500/15 text-emerald-300'
-                            : 'border-white/5 bg-white/5 text-slate-500 hover:border-white/10'
-                        }`}
-                      >
-                        {item}
-                      </button>
+                      <option key={item} value={item}>
+                        {formatLabel(item)}
+                      </option>
                     ))}
-                  </div>
+                  </select>
                 </div>
 
                 <div className="space-y-2">

@@ -11,8 +11,8 @@ import {
   useVideoConfig,
 } from 'remotion';
 
-type SlideTheme = 'modern' | 'classic' | 'neon' | 'warm';
-type Transition = 'fade' | 'slide' | 'zoom';
+type SlideTheme = 'modern' | 'classic' | 'neon' | 'warm' | 'ocean' | 'editorial' | 'sunset' | 'forest';
+type Transition = 'fade' | 'slide' | 'zoom' | 'rise' | 'flip' | 'drift';
 
 type RenderSlide = {
   title: string;
@@ -48,6 +48,10 @@ const themeStyles: Record<SlideTheme, { background: string; text: string; accent
   classic: { background: '#f8fafc', text: '#0f172a', accent: '#2563eb' },
   neon: { background: '#020617', text: '#22d3ee', accent: '#06b6d4' },
   warm: { background: '#fff7ed', text: '#431407', accent: '#ea580c' },
+  ocean: { background: '#082f49', text: '#ecfeff', accent: '#22d3ee' },
+  editorial: { background: '#f4f4f5', text: '#18181b', accent: '#18181b' },
+  sunset: { background: '#4a044e', text: '#fff7ed', accent: '#fb7185' },
+  forest: { background: '#052e16', text: '#ecfdf5', accent: '#34d399' },
 };
 
 const renderInlineMarkdown = (text: string, color: string) => {
@@ -216,6 +220,10 @@ const SlideScene: React.FC<{
 
   const translateX = transition === 'slide' ? interpolate(frame, [0, 18], [120, 0], { extrapolateRight: 'clamp' }) : 0;
   const scale = transition === 'zoom' ? interpolate(frame, [0, 18], [1.12, 1], { extrapolateRight: 'clamp' }) : 1;
+  const translateY = transition === 'rise' ? interpolate(frame, [0, 18], [90, 0], { extrapolateRight: 'clamp' }) : 0;
+  const rotateX = transition === 'flip' ? interpolate(frame, [0, 18], [-18, 0], { extrapolateRight: 'clamp' }) : 0;
+  const driftX = transition === 'drift' ? interpolate(frame, [0, 18], [-50, 0], { extrapolateRight: 'clamp' }) : 0;
+  const driftScale = transition === 'drift' ? interpolate(frame, [0, 18], [1.04, 1], { extrapolateRight: 'clamp' }) : 1;
 
   return (
     <AbsoluteFill
@@ -223,7 +231,7 @@ const SlideScene: React.FC<{
         backgroundColor: visualTheme.background,
         color: visualTheme.text,
         opacity,
-        transform: `translateX(${translateX}px) scale(${scale})`,
+        transform: `perspective(1200px) translateX(${translateX + driftX}px) translateY(${translateY}px) rotateX(${rotateX}deg) scale(${scale * driftScale})`,
       }}
     >
       {slide.image ? (
