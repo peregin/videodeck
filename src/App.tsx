@@ -6,6 +6,7 @@ import {
   Clapperboard,
   Clock3,
   FileText,
+  HelpCircle,
   LoaderCircle,
   Maximize,
   Pause,
@@ -103,6 +104,19 @@ type RenderJob = {
   videoUrl: string | null;
   stages: RenderStage[];
 };
+
+const MARKDOWN_HELP = [
+  { label: 'Slide separator', syntax: '---', note: 'Put it on its own line to start a new slide.' },
+  { label: 'Speaker notes', syntax: 'Speaker Note: Your narration text', note: 'Put it on its own line to generate narration.' },
+  { label: 'Headings', syntax: '# Title / ## Section / ### Detail', note: 'The first heading becomes the slide title.' },
+  { label: 'Bold + italic', syntax: '**bold** and *italic*', note: 'Inline emphasis is rendered in preview and final video.' },
+  { label: 'Inline code', syntax: '`code`', note: 'Great for commands, APIs, and file names.' },
+  { label: 'Bullet list', syntax: '- item one', note: 'Use `-` or `*` for unordered lists.' },
+  { label: 'Numbered list', syntax: '1. first step', note: 'Rendered as an ordered list.' },
+  { label: 'Quote', syntax: '> highlighted callout', note: 'Rendered as a visual blockquote.' },
+  { label: 'Code block', syntax: '```ts ... ```', note: 'Fenced code blocks support optional language tags.' },
+  { label: 'Image', syntax: '![Alt](https://...)', note: 'The first image on a slide becomes the hero image.' },
+];
 
 const splitSlides = (source: string) => {
   const slides: string[] = [];
@@ -323,6 +337,7 @@ export default function VideoDeck() {
   const [transition, setTransition] = useState<(typeof TRANSITIONS)[number]['id']>('fade');
   const [showCaptions, setShowCaptions] = useState(true);
   const [isCinemaMode, setIsCinemaMode] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [renderJob, setRenderJob] = useState<RenderJob | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [playingSlideIndex, setPlayingSlideIndex] = useState<number | null>(null);
@@ -510,9 +525,19 @@ export default function VideoDeck() {
           <aside className="w-full border-r border-white/5 bg-[#0f0f12] md:w-[480px]">
             <div className="space-y-6 p-5">
               <section className="space-y-3">
-                <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.28em] text-slate-500">
-                  <FileText size={12} /> Markdown Source
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.28em] text-slate-500">
+                    <FileText size={12} /> Markdown Source
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsHelpOpen(true)}
+                    className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                  >
+                    <HelpCircle size={12} />
+                    Help
+                  </button>
+                </div>
                 <textarea
                   value={markdown}
                   onChange={(event) => setMarkdown(event.target.value)}
@@ -806,6 +831,44 @@ export default function VideoDeck() {
           </div>
         </section>
       </main>
+
+      {isHelpOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-3xl rounded-[28px] border border-white/10 bg-[#0f0f12] p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-lg font-black text-white">Markdown Help</p>
+                <p className="text-sm text-slate-400">Supported syntax for slide parsing, preview rendering, and final video output.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsHelpOpen(false)}
+                className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] text-slate-300 transition hover:bg-white/10 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-3">
+              {MARKDOWN_HELP.map((item) => (
+                <div key={item.label} className="rounded-2xl border border-white/5 bg-black/30 p-4">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between md:gap-6">
+                    <div className="min-w-40">
+                      <p className="text-sm font-bold text-white">{item.label}</p>
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <pre className="overflow-x-auto rounded-xl border border-white/5 bg-black/40 p-3 text-xs text-emerald-200">
+                        <code>{item.syntax}</code>
+                      </pre>
+                      <p className="text-xs text-slate-400">{item.note}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
