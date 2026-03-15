@@ -89,6 +89,16 @@ const getKokoro = async () => {
   return kokoroPromise;
 };
 
+const estimateSlideSeconds = (slide) => {
+  if (slide.speakerNote) {
+    const words = slide.speakerNote.split(/\s+/).filter(Boolean).length;
+    return Math.max(defaultStillSeconds, Math.ceil(words / 2.6));
+  }
+
+  const bodyWords = slide.body.join(' ').split(/\s+/).filter(Boolean).length;
+  return Math.max(defaultStillSeconds, Math.ceil(bodyWords / 3));
+};
+
 const getBundleUrl = async (jobId) => {
   if (!bundlePromise) {
     bundlePromise = bundle({
@@ -163,7 +173,7 @@ const runRenderJob = async (jobId, payload) => {
         durationInFrames = Math.max(Math.round((seconds + 0.6) * fps), defaultStillSeconds * fps);
         audioUrl = `http://localhost:${defaultPort}/renders/${jobId}/slide-${index}.wav`;
       } else {
-        const estimatedSeconds = Math.max(defaultStillSeconds, Math.ceil(slide.body.join(' ').split(/\s+/).filter(Boolean).length / 3));
+        const estimatedSeconds = estimateSlideSeconds(slide);
         durationInFrames = estimatedSeconds * fps;
       }
 
@@ -302,6 +312,30 @@ const attachRenderRoutes = (app) => {
       transition,
       showCaptions: Boolean(showCaptions),
     });
+  });
+
+  app.post('/api/narration-preview', async (request, response) => {
+    const { text, voice } = request.body ?? {};
+
+    if (typeof text !== 'string' || !text.trim()) {
+      response.status(400).send('`text` is required.');
+      return;
+    }
+
+    if (typeof voice !== 'string' || !voice.trim()) {
+      response.status(400).send('`voice` is required.');
+      return;
+    }
+
+    try {
+      const kokoro = await getKokoro();
+      const audio = await kokoro.generate(text, { voice, speed: 1 });
+      const wav = audio.toWav();
+      response.setHeader('Content-Type', 'audio/wav');
+      response.send(Buffer.from(wav));
+    } catch (error) {
+      response.status(500).send(error instanceof Error ? error.message : 'Narration preview failed.');
+    }
   });
 };
 

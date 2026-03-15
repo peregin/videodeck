@@ -8,9 +8,12 @@ import {
   FileText,
   LoaderCircle,
   Maximize,
+  Pause,
+  Play,
   Settings2,
   Type,
   Video,
+  Waves,
   XCircle,
 } from 'lucide-react';
 
@@ -82,6 +85,22 @@ type RenderJob = {
   stages: RenderStage[];
 };
 
+const estimateSlideSeconds = (slide: Slide) => {
+  if (slide.speakerNote) {
+    const words = slide.speakerNote.split(/\s+/).filter(Boolean).length;
+    return Math.max(3, Math.ceil(words / 2.6));
+  }
+
+  const bodyWords = slide.body.join(' ').split(/\s+/).filter(Boolean).length;
+  return Math.max(3, Math.ceil(bodyWords / 3));
+};
+
+const formatDuration = (seconds: number) => {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
 const parseSlides = (source: string): Slide[] =>
   source
     .split('---')
@@ -123,14 +142,38 @@ export default function VideoDeck() {
   const [isCinemaMode, setIsCinemaMode] = useState(false);
   const [renderJob, setRenderJob] = useState<RenderJob | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [playingSlideIndex, setPlayingSlideIndex] = useState<number | null>(null);
+  const [loadingSlideIndex, setLoadingSlideIndex] = useState<number | null>(null);
+  const [previewAudio, setPreviewAudio] = useState<HTMLAudioElement | null>(null);
 
   const slides = useMemo(() => parseSlides(markdown), [markdown]);
   const currentSlide = slides[currentSlideIndex] ?? slides[0];
   const isRendering = renderJob?.status === 'queued' || renderJob?.status === 'running';
+  const slidesWithEstimates = useMemo(
+    () =>
+      slides.map((slide) => ({
+        ...slide,
+        estimatedSeconds: estimateSlideSeconds(slide),
+      })),
+    [slides],
+  );
+  const totalEstimatedSeconds = useMemo(
+    () => slidesWithEstimates.reduce((sum, slide) => sum + slide.estimatedSeconds, 0),
+    [slidesWithEstimates],
+  );
 
   useEffect(() => {
     setCurrentSlideIndex((index) => Math.min(index, Math.max(slides.length - 1, 0)));
   }, [slides.length]);
+
+  useEffect(() => {
+    return () => {
+      previewAudio?.pause();
+      if (previewAudio?.src.startsWith('blob:')) {
+        URL.revokeObjectURL(previewAudio.src);
+      }
+    };
+  }, [previewAudio]);
 
   useEffect(() => {
     if (!renderJob?.jobId || !isRendering) return;
@@ -178,6 +221,66 @@ export default function VideoDeck() {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleNarrationPreview = async (slide: Slide, slideIndex: number) => {
+    if (!slide.speakerNote) return;
+
+    if (playingSlideIndex === slideIndex && previewAudio) {
+      previewAudio.pause();
+      previewAudio.currentTime = 0;
+      setPlayingSlideIndex(null);
+      return;
+    }
+
+    setLoadingSlideIndex(slideIndex);
+
+    try {
+      previewAudio?.pause();
+      if (previewAudio?.src.startsWith('blob:')) {
+        URL.revokeObjectURL(previewAudio.src);
+      }
+
+      const response = await fetch('/api/narration-preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: slide.speakerNote,
+          voice,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audio.onended = () => {
+        setPlayingSlideIndex(null);
+        URL.revokeObjectURL(url);
+      };
+      audio.onerror = () => {
+        setPlayingSlideIndex(null);
+        URL.revokeObjectURL(url);
+      };
+
+      setPreviewAudio(audio);
+      setPlayingSlideIndex(slideIndex);
+      await audio.play();
+    } catch (error) {
+      setRenderJob({
+        jobId: 'preview-error',
+        status: 'failed',
+        message: error instanceof Error ? error.message : 'Narration preview failed.',
+        videoUrl: null,
+        stages: renderJob?.stages ?? [],
+      });
+      setPlayingSlideIndex(null);
+    } finally {
+      setLoadingSlideIndex(null);
     }
   };
 
@@ -389,40 +492,122 @@ export default function VideoDeck() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-[#0f0f12]/95 px-6 py-4 backdrop-blur-2xl">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setCurrentSlideIndex((value) => Math.max(0, value - 1))}
-                  className="rounded-full p-2 text-slate-500 transition hover:text-white"
-                >
-                  <ChevronLeft size={22} />
-                </button>
-                <button
-                  onClick={() => setCurrentSlideIndex((value) => Math.min(slides.length - 1, value + 1))}
-                  className="rounded-full p-2 text-slate-500 transition hover:text-white"
-                >
-                  <ChevronRight size={22} />
-                </button>
-              </div>
-
-              <div className="text-center">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Preview</p>
-                <p className="text-lg font-bold text-white">{TRANSITIONS.find((item) => item.id === transition)?.name}</p>
-              </div>
-
-              {isCinemaMode ? (
-                <button
-                  onClick={() => setIsCinemaMode(false)}
-                  className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/10"
-                >
-                  Exit Studio
-                </button>
-              ) : (
-                <div className="text-right">
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Voice</p>
-                  <p className="text-lg font-bold text-white">{KOKORO_VOICES.find((item) => item.id === voice)?.name}</p>
+            <div className="overflow-x-auto rounded-[28px] border border-white/10 bg-[#0f0f12] p-4">
+              <div className="mb-3 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setCurrentSlideIndex((value) => Math.max(0, value - 1))}
+                    className="rounded-full p-2 text-slate-500 transition hover:text-white"
+                  >
+                    <ChevronLeft size={22} />
+                  </button>
+                  <button
+                    onClick={() => setCurrentSlideIndex((value) => Math.min(slides.length - 1, value + 1))}
+                    className="rounded-full p-2 text-slate-500 transition hover:text-white"
+                  >
+                    <ChevronRight size={22} />
+                  </button>
+                  <div>
+                    <p className="text-sm font-bold text-white">Slide Preview Bar</p>
+                  </div>
                 </div>
-              )}
+
+                <div className="flex items-center gap-6">
+                  <div className="text-right">
+                    <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Total Estimate</p>
+                    <p className="text-sm font-semibold text-white">{formatDuration(totalEstimatedSeconds)}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Transition</p>
+                    <p className="text-sm font-semibold text-white">{TRANSITIONS.find((item) => item.id === transition)?.name}</p>
+                  </div>
+                  {isCinemaMode ? (
+                    <button
+                      onClick={() => setIsCinemaMode(false)}
+                      className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/10"
+                    >
+                      Exit Studio
+                    </button>
+                  ) : (
+                    <div className="text-right">
+                      <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Voice</p>
+                      <p className="text-sm font-semibold text-white">{KOKORO_VOICES.find((item) => item.id === voice)?.name}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                {slidesWithEstimates.map((slide, index) => {
+                  const isCurrent = index === currentSlideIndex;
+                  const isLoadingPreview = loadingSlideIndex === index;
+                  const isPlayingPreview = playingSlideIndex === index;
+
+                  return (
+                    <div
+                      key={`${slide.title}-${index}`}
+                      className={`relative flex h-44 w-60 flex-shrink-0 flex-col justify-between overflow-hidden rounded-2xl border p-4 text-left transition ${
+                        isCurrent
+                          ? 'border-emerald-500/60 bg-emerald-500/10 shadow-[0_0_30px_rgba(16,185,129,0.14)]'
+                          : 'border-white/10 bg-white/5 hover:border-white/20'
+                      }`}
+                    >
+                      {slide.image && (
+                        <img
+                          src={slide.image}
+                          alt=""
+                          className="absolute inset-0 h-full w-full object-cover opacity-20"
+                        />
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/30 to-black/85" />
+                      <div className="relative flex items-start justify-between gap-3">
+                        <span className="rounded-full border border-white/10 bg-black/40 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-300">
+                          {index + 1}
+                        </span>
+                        <span className="rounded-full border border-white/10 bg-black/40 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-300">
+                          {formatDuration(slide.estimatedSeconds)}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setCurrentSlideIndex(index)}
+                        className="relative space-y-2 text-left"
+                      >
+                        <p className="line-clamp-2 text-lg font-bold text-white">{slide.title}</p>
+                        <p className="line-clamp-2 text-xs text-slate-300">
+                          {slide.speakerNote || slide.body.join(' ') || 'No narration'}
+                        </p>
+                      </button>
+
+                      <div className="relative flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                          <Waves size={12} />
+                          {slide.speakerNote ? 'Narration Ready' : 'Visual Only'}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={!slide.speakerNote || isLoadingPreview}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleNarrationPreview(slide, index);
+                          }}
+                          className="flex items-center gap-2 rounded-full border border-white/10 bg-black/50 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {isLoadingPreview ? (
+                            <LoaderCircle size={14} className="animate-spin" />
+                          ) : isPlayingPreview ? (
+                            <Pause size={14} />
+                          ) : (
+                            <Play size={14} />
+                          )}
+                          {isPlayingPreview ? 'Stop' : 'Play'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {renderJob?.videoUrl && (
