@@ -46,10 +46,11 @@ const TRANSITIONS = [
 
 const DEFAULT_MARKDOWN = `
 # Welcome to VideoDeck
+![Tech](https://images.unsplash.com/photo-1642726197634-2a21f764220a?w=800&q=80)
 ---
 ## How it Works
 Write markdown, get a video presentation instantly.
-![Tech](https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&q=80)
+![Tech](https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=800&q=80)
 Speaker Note: Welcome everyone to the future of presentation tools. VideoDeck makes creating reels as easy as writing a text file.
 ---
 ## Visual Media
@@ -57,6 +58,7 @@ You can include high-quality images and even link videos.
 Speaker Note: Each slide can handle text, images, and embedded media. Notice how the captions sync with my voice.
 ---
 ## Cinema Mode
+![Tech](https://images.unsplash.com/photo-1589535189132-7221b70db02a?w=800&q=80)
 Try hitting the fullscreen button for a cinematic experience.
 Speaker Note: Presentations don't have to be boring. Use the transition settings to customize the flow.
 `;
