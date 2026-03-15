@@ -507,7 +507,7 @@ export default function VideoDeck() {
 
       <main className={`mx-auto flex max-w-[1600px] flex-col md:flex-row ${isCinemaMode ? 'fixed inset-0 z-[100] max-w-none bg-black' : ''}`}>
         {!isCinemaMode && (
-          <aside className="w-full border-r border-white/5 bg-[#0f0f12] md:w-[420px]">
+          <aside className="w-full border-r border-white/5 bg-[#0f0f12] md:w-[480px]">
             <div className="space-y-6 p-5">
               <section className="space-y-3">
                 <label className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.28em] text-slate-500">
