@@ -26,13 +26,13 @@ const stageTemplate = () => [
 
 const parseSlides = (source) =>
   source
-    .split('---')
+    .split(/^\s*---\s*$/m)
     .map((block) => block.trim())
     .filter(Boolean)
     .map((block) => {
-      const speakerNoteMatch = block.match(/Speaker Note:\s*(.*)/i);
+      const speakerNoteMatch = block.match(/^\s*Speaker Note:\s*(.*)$/im);
       const speakerNote = speakerNoteMatch ? speakerNoteMatch[1].trim() : '';
-      const content = block.replace(/Speaker Note:\s*(.*)/i, '').trim();
+      const content = block.replace(/^\s*Speaker Note:\s*.*$/im, '').trim();
       const title = content.match(/^#+\s*(.*)/m)?.[1]?.trim() || 'Untitled Slide';
       const body = content
         .split('\n')

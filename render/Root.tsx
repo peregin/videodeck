@@ -50,6 +50,145 @@ const themeStyles: Record<SlideTheme, { background: string; text: string; accent
   warm: { background: '#fff7ed', text: '#431407', accent: '#ea580c' },
 };
 
+const renderInlineMarkdown = (text: string, color: string) => {
+  const tokens = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean);
+
+  return tokens.map((token, index) => {
+    if (token.startsWith('**') && token.endsWith('**')) {
+      return (
+        <strong key={`${token}-${index}`} style={{ fontWeight: 900, color }}>
+          {token.slice(2, -2)}
+        </strong>
+      );
+    }
+
+    if (token.startsWith('*') && token.endsWith('*')) {
+      return (
+        <em key={`${token}-${index}`} style={{ fontStyle: 'italic', color }}>
+          {token.slice(1, -1)}
+        </em>
+      );
+    }
+
+    if (token.startsWith('`') && token.endsWith('`')) {
+      return (
+        <code
+          key={`${token}-${index}`}
+          style={{
+            backgroundColor: 'rgba(0,0,0,0.35)',
+            borderRadius: 8,
+            color: '#bbf7d0',
+            fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+            fontSize: '0.9em',
+            padding: '2px 8px',
+          }}
+        >
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+
+    return <span key={`${token}-${index}`}>{token}</span>;
+  });
+};
+
+const renderSlideBody = (lines: string[], color: string, accent: string) => {
+  const blocks: React.ReactNode[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+
+    if (line === '```') {
+      const codeLines: string[] = [];
+      index += 1;
+      while (index < lines.length && lines[index] !== '```') {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+
+      blocks.push(
+        <pre
+          key={`code-${index}`}
+          style={{
+            backgroundColor: 'rgba(0,0,0,0.45)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: 22,
+            color: '#bbf7d0',
+            fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+            fontSize: 24,
+            margin: 0,
+            overflow: 'hidden',
+            padding: '24px 28px',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          <code>{codeLines.join('\n')}</code>
+        </pre>,
+      );
+      continue;
+    }
+
+    if (line.startsWith('### ')) {
+      blocks.push(
+        <div key={`h3-${index}`} style={{ color, fontSize: 30, fontWeight: 900, lineHeight: 1.1 }}>
+          {renderInlineMarkdown(line.slice(4), color)}
+        </div>,
+      );
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(line)) {
+      blocks.push(
+        <div key={`ul-${index}`} style={{ alignItems: 'flex-start', color, display: 'flex', gap: 14, fontSize: 32, lineHeight: 1.25 }}>
+          <span style={{ color: accent, fontWeight: 900 }}>•</span>
+          <span style={{ opacity: 0.88 }}>{renderInlineMarkdown(line.replace(/^[-*]\s+/, ''), color)}</span>
+        </div>,
+      );
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(line)) {
+      const match = line.match(/^(\d+)\.\s+(.*)$/);
+      blocks.push(
+        <div key={`ol-${index}`} style={{ alignItems: 'flex-start', color, display: 'flex', gap: 14, fontSize: 32, lineHeight: 1.25 }}>
+          <span style={{ color: accent, fontWeight: 900, minWidth: 36 }}>{match?.[1]}.</span>
+          <span style={{ opacity: 0.88 }}>{renderInlineMarkdown(match?.[2] ?? line, color)}</span>
+        </div>,
+      );
+      continue;
+    }
+
+    if (line.startsWith('>')) {
+      blocks.push(
+        <div
+          key={`quote-${index}`}
+          style={{
+            backgroundColor: 'rgba(0,0,0,0.2)',
+            borderLeft: `6px solid ${accent}`,
+            borderRadius: 18,
+            color,
+            fontSize: 30,
+            fontStyle: 'italic',
+            lineHeight: 1.3,
+            padding: '18px 24px',
+          }}
+        >
+          {renderInlineMarkdown(line.replace(/^>\s?/, ''), color)}
+        </div>,
+      );
+      continue;
+    }
+
+    blocks.push(
+      <div key={`p-${index}`} style={{ color, fontSize: 32, lineHeight: 1.25, opacity: 0.88 }}>
+        {renderInlineMarkdown(line, color)}
+      </div>,
+    );
+  }
+
+  return blocks;
+};
+
 const SlideScene: React.FC<{
   slide: RenderSlide;
   theme: SlideTheme;
@@ -130,20 +269,16 @@ const SlideScene: React.FC<{
           >
             {slide.title}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 980 }}>
-            {slide.body.map((line, index) => (
-              <div
-                key={`${line}-${index}`}
-                style={{
-                  fontSize: 34,
-                  lineHeight: 1.25,
-                  opacity: 0.88,
-                  transform: `translateY(${(1 - entrance) * 18}px)`,
-                }}
-              >
-                {line}
-              </div>
-            ))}
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 16,
+              maxWidth: 980,
+              transform: `translateY(${(1 - entrance) * 18}px)`,
+            }}
+          >
+            {renderSlideBody(slide.body, visualTheme.text, visualTheme.accent)}
           </div>
         </div>
 

@@ -42,23 +42,42 @@ const TRANSITIONS = [
 
 const DEFAULT_MARKDOWN = `
 # Welcome to VideoDeck
-![Tech](https://images.unsplash.com/photo-1498940757830-82f7813bf178?w=400&q=80)
-Speaker Note: Welcome to VideoDeck. This cut is rendered end to end with Kokoro narration and Remotion video rendering.
+![Tech](https://images.unsplash.com/photo-1498940757830-82f7813bf178?w=1200&q=80)
+VideoDeck turns markdown into a narrated slide presentation with **Kokoro voice generation** and *Remotion video rendering*.
+> Write once. Preview instantly. Render when ready.
+This studio lets you edit markdown, review slide timing, listen to narration, and export the whole presentation as a final video.
+Speaker Note: Welcome to VideoDeck. This first slide explains that the app turns markdown into narrated slides and a final rendered presentation video.
 ---
-## How it Works
-Write markdown, choose a Kokoro voice, and render a video presentation.
+## How It Works
+1. Write your presentation in markdown
+2. Split slides with \`---\`
+3. Add a \`Speaker Note:\` line for narration
+- Choose a Kokoro voice
+- Preview slide timing and narration
+- Render the full video when the deck is ready
 ![Studio](https://images.unsplash.com/photo-1513542789411-b6a5d4f31634?w=1200&q=80)
-Speaker Note: The pipeline parses your slides, synthesizes narration, builds the composition, and renders the final MP4.
+Speaker Note: This slide explains the workflow. You author markdown, split slides, add speaker notes, preview the results, and then render the final video.
 ---
-## Visual Media
-Each slide can include a title, body copy, and a hero image.
+## Markdown Features Rendered
+### Supported Styling
+Use **bold text**, *italic emphasis*, and inline \`code\` inside normal paragraphs.
+- Bullet lists become styled talking points
+1. Numbered lists become sequential steps
+> Quotes turn into highlighted callouts
+\`\`\`
+const message = "Code blocks are rendered too";
+\`\`\`
 ![Visual](https://images.unsplash.com/photo-1773001899177-7f642f65fd4c?w=800&q=80)
-Speaker Note: Images stay on-screen while the narration track for the slide plays, with captions enabled if you want them.
+Speaker Note: This slide showcases the markdown syntax that VideoDeck renders visually, including headings, emphasis, lists, quotes, inline code, and code blocks.
 ---
-## Final Output
-Press render to generate the finished video.
+## From Preview to Final Video
+Press **Render Final Video** to generate the complete MP4.
+- The pipeline parses slides
+- Kokoro generates narration
+- Remotion assembles the final video
+Use **Cinema Mode** to watch the deck in a focused fullscreen presentation view before or after rendering.
 ![Cinema](https://images.unsplash.com/photo-1589535189132-7221b70db02a?w=1200&q=80)
-Speaker Note: When the render finishes, the final video appears below the pipeline so you can review and download it.
+Speaker Note: The final slide explains that once the preview looks right, VideoDeck can render the whole presentation into a finished video, and Cinema Mode gives you a clean viewing experience.
 `;
 
 type Slide = {
@@ -101,15 +120,110 @@ const formatDuration = (seconds: number) => {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
+const renderInlineMarkdown = (text: string) => {
+  const tokens = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean);
+
+  return tokens.map((token, index) => {
+    if (token.startsWith('**') && token.endsWith('**')) {
+      return <strong key={`${token}-${index}`} className="font-black text-white">{token.slice(2, -2)}</strong>;
+    }
+
+    if (token.startsWith('*') && token.endsWith('*')) {
+      return <em key={`${token}-${index}`} className="italic text-white/90">{token.slice(1, -1)}</em>;
+    }
+
+    if (token.startsWith('`') && token.endsWith('`')) {
+      return (
+        <code key={`${token}-${index}`} className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[0.9em] text-emerald-200">
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+
+    return <span key={`${token}-${index}`}>{token}</span>;
+  });
+};
+
+const renderSlideBody = (lines: string[]) => {
+  const blocks: JSX.Element[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+
+    if (line === '```') {
+      const codeLines: string[] = [];
+      index += 1;
+      while (index < lines.length && lines[index] !== '```') {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+
+      blocks.push(
+        <pre key={`code-${index}`} className="overflow-x-auto rounded-2xl border border-white/10 bg-black/50 p-4 text-sm text-emerald-200">
+          <code>{codeLines.join('\n')}</code>
+        </pre>,
+      );
+      continue;
+    }
+
+    if (line.startsWith('### ')) {
+      blocks.push(
+        <h3 key={`h3-${index}`} className="text-2xl font-black text-white/90">
+          {renderInlineMarkdown(line.slice(4))}
+        </h3>,
+      );
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(line)) {
+      blocks.push(
+        <div key={`ul-${index}`} className="flex items-start gap-3 text-lg md:text-2xl">
+          <span className="mt-1 text-emerald-300">•</span>
+          <p className="font-medium text-white/80">{renderInlineMarkdown(line.replace(/^[-*]\s+/, ''))}</p>
+        </div>,
+      );
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(line)) {
+      const match = line.match(/^(\d+)\.\s+(.*)$/);
+      blocks.push(
+        <div key={`ol-${index}`} className="flex items-start gap-3 text-lg md:text-2xl">
+          <span className="mt-0.5 min-w-6 font-black text-emerald-300">{match?.[1]}.</span>
+          <p className="font-medium text-white/80">{renderInlineMarkdown(match?.[2] ?? line)}</p>
+        </div>,
+      );
+      continue;
+    }
+
+    if (line.startsWith('>')) {
+      blocks.push(
+        <blockquote key={`quote-${index}`} className="border-l-4 border-emerald-400/60 bg-black/20 px-4 py-3 text-lg italic text-white/90 md:text-2xl">
+          {renderInlineMarkdown(line.replace(/^>\s?/, ''))}
+        </blockquote>,
+      );
+      continue;
+    }
+
+    blocks.push(
+      <p key={`p-${index}`} className="text-lg font-medium leading-snug text-white/80 md:text-2xl">
+        {renderInlineMarkdown(line)}
+      </p>,
+    );
+  }
+
+  return blocks;
+};
+
 const parseSlides = (source: string): Slide[] =>
   source
-    .split('---')
+    .split(/^\s*---\s*$/m)
     .map((block) => block.trim())
     .filter(Boolean)
     .map((block) => {
-      const speakerNoteMatch = block.match(/Speaker Note:\s*(.*)/i);
+      const speakerNoteMatch = block.match(/^\s*Speaker Note:\s*(.*)$/im);
       const speakerNote = speakerNoteMatch ? speakerNoteMatch[1].trim() : '';
-      const content = block.replace(/Speaker Note:\s*(.*)/i, '').trim();
+      const content = block.replace(/^\s*Speaker Note:\s*.*$/im, '').trim();
       const title = content.match(/^#+\s*(.*)/m)?.[1]?.trim() || 'Untitled Slide';
       const body = content
         .split('\n')
@@ -475,11 +589,7 @@ export default function VideoDeck() {
                     Slide {currentSlideIndex + 1} / {slides.length}
                   </p>
                   <h1 className="max-w-3xl text-4xl font-black tracking-tight md:text-6xl">{currentSlide?.title}</h1>
-                  <div className="space-y-3 text-lg font-medium leading-snug text-white/80 md:text-2xl">
-                    {currentSlide?.body.map((line, index) => (
-                      <p key={`${line}-${index}`}>{line}</p>
-                    ))}
-                  </div>
+                  <div className="space-y-3">{currentSlide ? renderSlideBody(currentSlide.body) : null}</div>
                 </div>
 
                 {showCaptions && currentSlide?.speakerNote && (
