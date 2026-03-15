@@ -15,7 +15,6 @@ const defaultStillSeconds = 3;
 
 const jobs = new Map();
 let kokoroPromise = null;
-let bundlePromise = null;
 
 const stageTemplate = () => [
   { id: 'parse', label: 'Parse Slides', status: 'pending', message: 'Waiting for render job.', progress: 0 },
@@ -24,28 +23,90 @@ const stageTemplate = () => [
   { id: 'render', label: 'Render Final Video', status: 'pending', message: 'Waiting for video render.', progress: 0 },
 ];
 
-const parseSlides = (source) =>
-  source
-    .split(/^\s*---\s*$/m)
-    .map((block) => block.trim())
-    .filter(Boolean)
-    .map((block) => {
-      const speakerNoteMatch = block.match(/^\s*Speaker Note:\s*(.*)$/im);
-      const speakerNote = speakerNoteMatch ? speakerNoteMatch[1].trim() : '';
-      const content = block.replace(/^\s*Speaker Note:\s*.*$/im, '').trim();
-      const title = content.match(/^#+\s*(.*)/m)?.[1]?.trim() || 'Untitled Slide';
-      const body = content
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith('#') && !line.startsWith('!['));
+const splitSlides = (source) => {
+  const slides = [];
+  const current = [];
+  let inCodeFence = false;
 
-      return {
-        title,
-        body,
-        image: content.match(/!\[.*\]\((.*)\)/)?.[1] || null,
-        speakerNote,
-      };
-    });
+  for (const rawLine of source.split('\n')) {
+    const trimmed = rawLine.trim();
+    if (trimmed.startsWith('```')) {
+      inCodeFence = !inCodeFence;
+    }
+
+    if (!inCodeFence && trimmed === '---') {
+      const block = current.join('\n').trim();
+      if (block) slides.push(block);
+      current.length = 0;
+      continue;
+    }
+
+    current.push(rawLine);
+  }
+
+  const block = current.join('\n').trim();
+  if (block) slides.push(block);
+  return slides;
+};
+
+const parseSlideBlock = (block) => {
+  const lines = block.split('\n');
+  let inCodeFence = false;
+  let title = 'Untitled Slide';
+  let titleIndex = -1;
+  let speakerNote = '';
+  let speakerNoteIndex = -1;
+  let image = null;
+  let imageIndex = -1;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim();
+
+    if (trimmed.startsWith('```')) {
+      inCodeFence = !inCodeFence;
+      continue;
+    }
+
+    if (inCodeFence) continue;
+
+    if (titleIndex === -1 && /^#+\s+/.test(trimmed)) {
+      title = trimmed.replace(/^#+\s+/, '').trim();
+      titleIndex = index;
+      continue;
+    }
+
+    if (imageIndex === -1) {
+      const imageMatch = trimmed.match(/!\[.*\]\((.*)\)/);
+      if (imageMatch) {
+        image = imageMatch[1];
+        imageIndex = index;
+        continue;
+      }
+    }
+
+    if (speakerNoteIndex === -1) {
+      const speakerNoteMatch = trimmed.match(/^Speaker Note:\s*(.*)$/i);
+      if (speakerNoteMatch) {
+        speakerNote = speakerNoteMatch[1].trim();
+        speakerNoteIndex = index;
+      }
+    }
+  }
+
+  const body = lines
+    .filter((_, index) => index !== titleIndex && index !== imageIndex && index !== speakerNoteIndex)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return {
+    title,
+    body,
+    image,
+    speakerNote,
+  };
+};
+
+const parseSlides = (source) => splitSlides(source).map(parseSlideBlock);
 
 const createJob = () => {
   const jobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -100,21 +161,17 @@ const estimateSlideSeconds = (slide) => {
 };
 
 const getBundleUrl = async (jobId) => {
-  if (!bundlePromise) {
-    bundlePromise = bundle({
-      entryPoint: renderEntry,
-      onProgress: (progress) => {
-        updateStage(jobId, 'compose', {
-          status: 'running',
-          progress: Math.round(progress * 100),
-          message: `Bundling Remotion composition (${Math.round(progress * 100)}%).`,
-        });
-      },
-      publicDir: null,
-    });
-  }
-
-  return bundlePromise;
+  return bundle({
+    entryPoint: renderEntry,
+    onProgress: (progress) => {
+      updateStage(jobId, 'compose', {
+        status: 'running',
+        progress: Math.round(progress * 100),
+        message: `Bundling Remotion composition (${Math.round(progress * 100)}%).`,
+      });
+    },
+    publicDir: null,
+  });
 };
 
 const runRenderJob = async (jobId, payload) => {

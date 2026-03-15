@@ -98,10 +98,10 @@ const renderSlideBody = (lines: string[], color: string, accent: string) => {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
 
-    if (line === '```') {
+    if (/^```/.test(line)) {
       const codeLines: string[] = [];
       index += 1;
-      while (index < lines.length && lines[index] !== '```') {
+      while (index < lines.length && !/^```/.test(lines[index])) {
         codeLines.push(lines[index]);
         index += 1;
       }
@@ -128,10 +128,13 @@ const renderSlideBody = (lines: string[], color: string, accent: string) => {
       continue;
     }
 
-    if (line.startsWith('### ')) {
+    if (/^#{2,4}\s+/.test(line)) {
+      const headingLevel = (line.match(/^#+/)?.[0].length ?? 3);
+      const fontSize = headingLevel === 2 ? 40 : headingLevel === 3 ? 30 : 24;
+
       blocks.push(
-        <div key={`h3-${index}`} style={{ color, fontSize: 30, fontWeight: 900, lineHeight: 1.1 }}>
-          {renderInlineMarkdown(line.slice(4), color)}
+        <div key={`h3-${index}`} style={{ color, fontSize, fontWeight: 900, lineHeight: 1.1 }}>
+          {renderInlineMarkdown(line.replace(/^#{2,4}\s+/, ''), color)}
         </div>,
       );
       continue;

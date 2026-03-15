@@ -104,6 +104,90 @@ type RenderJob = {
   stages: RenderStage[];
 };
 
+const splitSlides = (source: string) => {
+  const slides: string[] = [];
+  const current: string[] = [];
+  let inCodeFence = false;
+
+  for (const rawLine of source.split('\n')) {
+    const trimmed = rawLine.trim();
+    if (trimmed.startsWith('```')) {
+      inCodeFence = !inCodeFence;
+    }
+
+    if (!inCodeFence && trimmed === '---') {
+      const block = current.join('\n').trim();
+      if (block) slides.push(block);
+      current.length = 0;
+      continue;
+    }
+
+    current.push(rawLine);
+  }
+
+  const block = current.join('\n').trim();
+  if (block) slides.push(block);
+  return slides;
+};
+
+const parseSlideBlock = (block: string): Slide => {
+  const lines = block.split('\n');
+  let inCodeFence = false;
+  let title = 'Untitled Slide';
+  let titleIndex = -1;
+  let speakerNote = '';
+  let speakerNoteIndex = -1;
+  let image: string | null = null;
+  let imageIndex = -1;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim();
+
+    if (trimmed.startsWith('```')) {
+      inCodeFence = !inCodeFence;
+      continue;
+    }
+
+    if (inCodeFence) continue;
+
+    if (titleIndex === -1 && /^#+\s+/.test(trimmed)) {
+      title = trimmed.replace(/^#+\s+/, '').trim();
+      titleIndex = index;
+      continue;
+    }
+
+    if (imageIndex === -1) {
+      const imageMatch = trimmed.match(/!\[.*\]\((.*)\)/);
+      if (imageMatch) {
+        image = imageMatch[1];
+        imageIndex = index;
+        continue;
+      }
+    }
+
+    if (speakerNoteIndex === -1) {
+      const speakerNoteMatch = trimmed.match(/^Speaker Note:\s*(.*)$/i);
+      if (speakerNoteMatch) {
+        speakerNote = speakerNoteMatch[1].trim();
+        speakerNoteIndex = index;
+      }
+    }
+  }
+
+  const body = lines
+    .filter((_, index) => index !== titleIndex && index !== imageIndex && index !== speakerNoteIndex)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return {
+    content: block,
+    speakerNote,
+    image,
+    title,
+    body,
+  };
+};
+
 const estimateSlideSeconds = (slide: Slide) => {
   if (slide.speakerNote) {
     const words = slide.speakerNote.split(/\s+/).filter(Boolean).length;
@@ -150,10 +234,10 @@ const renderSlideBody = (lines: string[]) => {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
 
-    if (line === '```') {
+    if (/^```/.test(line)) {
       const codeLines: string[] = [];
       index += 1;
-      while (index < lines.length && lines[index] !== '```') {
+      while (index < lines.length && !/^```/.test(lines[index])) {
         codeLines.push(lines[index]);
         index += 1;
       }
@@ -166,10 +250,16 @@ const renderSlideBody = (lines: string[]) => {
       continue;
     }
 
-    if (line.startsWith('### ')) {
+    if (/^#{2,4}\s+/.test(line)) {
+      const headingLevel = (line.match(/^#+/)?.[0].length ?? 3);
+      const headingClass =
+        headingLevel === 2 ? 'text-3xl md:text-4xl' :
+        headingLevel === 3 ? 'text-2xl md:text-3xl' :
+        'text-xl md:text-2xl';
+
       blocks.push(
-        <h3 key={`h3-${index}`} className="text-2xl font-black text-white/90">
-          {renderInlineMarkdown(line.slice(4))}
+        <h3 key={`h3-${index}`} className={`${headingClass} font-black text-white/90`}>
+          {renderInlineMarkdown(line.replace(/^#{2,4}\s+/, ''))}
         </h3>,
       );
       continue;
@@ -216,28 +306,7 @@ const renderSlideBody = (lines: string[]) => {
 };
 
 const parseSlides = (source: string): Slide[] =>
-  source
-    .split(/^\s*---\s*$/m)
-    .map((block) => block.trim())
-    .filter(Boolean)
-    .map((block) => {
-      const speakerNoteMatch = block.match(/^\s*Speaker Note:\s*(.*)$/im);
-      const speakerNote = speakerNoteMatch ? speakerNoteMatch[1].trim() : '';
-      const content = block.replace(/^\s*Speaker Note:\s*.*$/im, '').trim();
-      const title = content.match(/^#+\s*(.*)/m)?.[1]?.trim() || 'Untitled Slide';
-      const body = content
-        .split('\n')
-        .map((line) => line.trim())
-        .filter((line) => line && !line.startsWith('#') && !line.startsWith('!['));
-
-      return {
-        content,
-        speakerNote,
-        image: content.match(/!\[.*\]\((.*)\)/)?.[1] || null,
-        title,
-        body,
-      };
-    });
+  splitSlides(source).map(parseSlideBlock);
 
 const getStageIcon = (status: RenderStage['status']) => {
   if (status === 'completed') return <CheckCircle2 size={16} className="text-emerald-400" />;
