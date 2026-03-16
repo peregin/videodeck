@@ -160,14 +160,20 @@ const estimateSlideSeconds = (slide) => {
   return Math.max(defaultStillSeconds, Math.ceil(bodyWords / 3));
 };
 
+const toPercent = (value) => {
+  const normalized = value <= 1 ? value * 100 : value;
+  return Math.max(0, Math.min(100, Math.round(normalized)));
+};
+
 const getBundleUrl = async (jobId) => {
   return bundle({
     entryPoint: renderEntry,
     onProgress: (progress) => {
+      const percent = toPercent(progress);
       updateStage(jobId, 'compose', {
         status: 'running',
-        progress: Math.round(progress * 100),
-        message: `Bundling Remotion composition (${Math.round(progress * 100)}%).`,
+        progress: percent,
+        message: `Bundling Remotion composition (${percent}%).`,
       });
     },
     publicDir: null,
@@ -295,10 +301,11 @@ const runRenderJob = async (jobId, payload) => {
       inputProps,
       overwrite: true,
       onProgress: (progress) => {
+        const percent = toPercent(progress.progress);
         updateStage(jobId, 'render', {
           status: 'running',
-          progress: Math.round(progress.progress * 100),
-          message: `Rendering final MP4 (${Math.round(progress.progress * 100)}%).`,
+          progress: percent,
+          message: `Rendering final MP4 (${percent}%).`,
         });
       },
     });
