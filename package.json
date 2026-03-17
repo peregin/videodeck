@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node server.mjs",
     "build": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && vite build",
+    "test": "node --test",
     "preview": "vite preview",
     "render-server": "node render/server.mjs",
     "start": "NODE_ENV=production node server.mjs",

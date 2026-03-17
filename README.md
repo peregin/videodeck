@@ -44,16 +44,19 @@ Notes:
 
 ## Project Structure
 
-- [src/App.tsx](/Users/levi/dev/videodeck/src/App.tsx)
+- [src/App.tsx](./src/App.tsx)
   Main editor and preview UI.
 
-- [render/Root.tsx](/Users/levi/dev/videodeck/render/Root.tsx)
+- [shared/videodeck-core.mjs](./shared/videodeck-core.mjs)
+  Shared markdown parsing, theme definitions, timing estimates, and validation helpers used by the UI and render server.
+
+- [render/Root.tsx](./render/Root.tsx)
   Remotion composition used for final video rendering.
 
-- [render/server.mjs](/Users/levi/dev/videodeck/render/server.mjs)
+- [render/server.mjs](./render/server.mjs)
   Render API routes, markdown parsing, Kokoro generation, and Remotion render pipeline.
 
-- [server.mjs](/Users/levi/dev/videodeck/server.mjs)
+- [server.mjs](./server.mjs)
   Single Node entrypoint for local development and production-style serving.
 
 ## Requirements
@@ -129,6 +132,11 @@ npm run build
 Typechecks and builds the frontend.
 
 ```bash
+npm test
+```
+Runs the shared parser and validation regression tests.
+
+```bash
 npm run start
 ```
 Serves the built app plus render API in production mode.
@@ -169,4 +177,3 @@ This folder is ignored by git.
 - The markdown renderer is intentionally narrow and presentation-focused, not full CommonMark.
 - Narration preview and final video narration depend on local Kokoro model loading.
 - Remotion rendering can be slower on the first run.
-

@@ -17,36 +17,16 @@ import {
   Waves,
   XCircle,
 } from 'lucide-react';
-
-const KOKORO_VOICES = [
-  { id: 'af_sarah', name: 'Sarah' },
-  { id: 'af_kore', name: 'Kore' },
-  { id: 'am_fenrir', name: 'Fenrir' },
-  { id: 'am_puck', name: 'Puck' },
-  { id: 'af_bella', name: 'Bella' },
-  { id: 'af_nicole', name: 'Nicole' },
-  { id: 'am_michael', name: 'Michael' },
-];
-
-const SLIDE_THEMES = {
-  modern: 'bg-slate-950 text-white',
-  classic: 'bg-white text-slate-900',
-  neon: 'bg-black text-cyan-400 border-2 border-cyan-500/30',
-  warm: 'bg-orange-50 text-stone-800',
-  ocean: 'bg-sky-950 text-cyan-50',
-  editorial: 'bg-zinc-100 text-zinc-900',
-  sunset: 'bg-rose-950 text-orange-50',
-  forest: 'bg-emerald-950 text-emerald-50',
-} as const;
-
-const TRANSITIONS = [
-  { id: 'fade', name: 'Smooth Fade' },
-  { id: 'slide', name: 'Horizontal Slide' },
-  { id: 'zoom', name: 'Dynamic Zoom' },
-  { id: 'rise', name: 'Vertical Rise' },
-  { id: 'flip', name: 'Flip In' },
-  { id: 'drift', name: 'Soft Drift' },
-] as const;
+import {
+  DEFAULT_SLIDE_THEME,
+  DEFAULT_TRANSITION,
+  KOKORO_VOICES,
+  SLIDE_THEMES,
+  TRANSITIONS,
+  estimateSlideSeconds,
+  getSlideTheme,
+  parseSlides,
+} from '../shared/videodeck-core.mjs';
 
 const DEFAULT_MARKDOWN = `
 # Welcome to VideoDeck
@@ -125,123 +105,38 @@ const MARKDOWN_HELP = [
   { label: 'Image', syntax: '![Alt](https://...)', note: 'The first image on a slide becomes the hero image.' },
 ];
 
-const splitSlides = (source: string) => {
-  const slides: string[] = [];
-  const current: string[] = [];
-  let inCodeFence = false;
-
-  for (const rawLine of source.split('\n')) {
-    const trimmed = rawLine.trim();
-    if (trimmed.startsWith('```')) {
-      inCodeFence = !inCodeFence;
-    }
-
-    if (!inCodeFence && trimmed === '---') {
-      const block = current.join('\n').trim();
-      if (block) slides.push(block);
-      current.length = 0;
-      continue;
-    }
-
-    current.push(rawLine);
-  }
-
-  const block = current.join('\n').trim();
-  if (block) slides.push(block);
-  return slides;
-};
-
-const parseSlideBlock = (block: string): Slide => {
-  const lines = block.split('\n');
-  let inCodeFence = false;
-  let title = 'Untitled Slide';
-  let titleIndex = -1;
-  let speakerNote = '';
-  let speakerNoteIndex = -1;
-  let image: string | null = null;
-  let imageIndex = -1;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const trimmed = lines[index].trim();
-
-    if (trimmed.startsWith('```')) {
-      inCodeFence = !inCodeFence;
-      continue;
-    }
-
-    if (inCodeFence) continue;
-
-    if (titleIndex === -1 && /^#+\s+/.test(trimmed)) {
-      title = trimmed.replace(/^#+\s+/, '').trim();
-      titleIndex = index;
-      continue;
-    }
-
-    if (imageIndex === -1) {
-      const imageMatch = trimmed.match(/!\[.*\]\((.*)\)/);
-      if (imageMatch) {
-        image = imageMatch[1];
-        imageIndex = index;
-        continue;
-      }
-    }
-
-    if (speakerNoteIndex === -1) {
-      const speakerNoteMatch = trimmed.match(/^Speaker Note:\s*(.*)$/i);
-      if (speakerNoteMatch) {
-        speakerNote = speakerNoteMatch[1].trim();
-        speakerNoteIndex = index;
-      }
-    }
-  }
-
-  const body = lines
-    .filter((_, index) => index !== titleIndex && index !== imageIndex && index !== speakerNoteIndex)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  return {
-    content: block,
-    speakerNote,
-    image,
-    title,
-    body,
-  };
-};
-
-const estimateSlideSeconds = (slide: Slide) => {
-  if (slide.speakerNote) {
-    const words = slide.speakerNote.split(/\s+/).filter(Boolean).length;
-    return Math.max(3, Math.ceil(words / 2.6));
-  }
-
-  const bodyWords = slide.body.join(' ').split(/\s+/).filter(Boolean).length;
-  return Math.max(3, Math.ceil(bodyWords / 3));
-};
-
 const formatDuration = (seconds: number) => {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 };
 
-const formatLabel = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+const getPreviewBodyColor = (opacity = 1) => `color-mix(in srgb, var(--slide-text) ${Math.round(opacity * 100)}%, transparent)`;
+const getPreviewAccentColor = (opacity = 1) => `color-mix(in srgb, var(--slide-accent) ${Math.round(opacity * 100)}%, transparent)`;
+const getPreviewSurfaceColor = (opacity = 1) => `color-mix(in srgb, var(--slide-text) ${Math.round(opacity * 100)}%, transparent)`;
 
 const renderInlineMarkdown = (text: string) => {
   const tokens = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean);
 
   return tokens.map((token, index) => {
     if (token.startsWith('**') && token.endsWith('**')) {
-      return <strong key={`${token}-${index}`} className="font-black text-white">{token.slice(2, -2)}</strong>;
+      return <strong key={`${token}-${index}`} className="font-black" style={{ color: 'var(--slide-text)' }}>{token.slice(2, -2)}</strong>;
     }
 
     if (token.startsWith('*') && token.endsWith('*')) {
-      return <em key={`${token}-${index}`} className="italic text-white/90">{token.slice(1, -1)}</em>;
+      return <em key={`${token}-${index}`} className="italic" style={{ color: getPreviewBodyColor(0.92) }}>{token.slice(1, -1)}</em>;
     }
 
     if (token.startsWith('`') && token.endsWith('`')) {
       return (
-        <code key={`${token}-${index}`} className="rounded bg-black/40 px-1.5 py-0.5 font-mono text-[0.9em] text-emerald-200">
+        <code
+          key={`${token}-${index}`}
+          className="rounded px-1.5 py-0.5 font-mono text-[0.9em]"
+          style={{
+            backgroundColor: 'var(--slide-code-background)',
+            color: 'var(--slide-accent)',
+          }}
+        >
           {token.slice(1, -1)}
         </code>
       );
@@ -256,80 +151,94 @@ const renderSlideBody = (lines: string[]) => {
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
+    const trimmed = line.trim();
 
-    if (/^```/.test(line)) {
+    if (/^```/.test(trimmed)) {
       const codeLines: string[] = [];
       index += 1;
-      while (index < lines.length && !/^```/.test(lines[index])) {
+      while (index < lines.length && !/^```/.test(lines[index].trim())) {
         codeLines.push(lines[index]);
         index += 1;
       }
 
       blocks.push(
-        <pre key={`code-${index}`} className="overflow-x-auto rounded-2xl border border-white/10 bg-black/50 p-4 text-sm text-emerald-200">
+        <pre
+          key={`code-${index}`}
+          className="overflow-x-auto rounded-2xl border p-4 text-sm"
+          style={{
+            backgroundColor: 'var(--slide-code-background)',
+            borderColor: getPreviewSurfaceColor(0.14),
+            color: 'var(--slide-accent)',
+          }}
+        >
           <code>{codeLines.join('\n')}</code>
         </pre>,
       );
       continue;
     }
 
-    if (/^#{2,4}\s+/.test(line)) {
-      const headingLevel = (line.match(/^#+/)?.[0].length ?? 3);
+    if (/^#{2,4}\s+/.test(trimmed)) {
+      const headingLevel = (trimmed.match(/^#+/)?.[0].length ?? 3);
       const headingClass =
         headingLevel === 2 ? 'text-3xl md:text-4xl' :
         headingLevel === 3 ? 'text-2xl md:text-3xl' :
         'text-xl md:text-2xl';
 
       blocks.push(
-        <h3 key={`h3-${index}`} className={`${headingClass} font-black text-white/90`}>
-          {renderInlineMarkdown(line.replace(/^#{2,4}\s+/, ''))}
+        <h3 key={`h3-${index}`} className={`${headingClass} font-black`} style={{ color: getPreviewBodyColor(0.95) }}>
+          {renderInlineMarkdown(trimmed.replace(/^#{2,4}\s+/, ''))}
         </h3>,
       );
       continue;
     }
 
-    if (/^[-*]\s+/.test(line)) {
+    if (/^[-*]\s+/.test(trimmed)) {
       blocks.push(
         <div key={`ul-${index}`} className="flex items-start gap-3 text-lg md:text-2xl">
-          <span className="mt-1 text-emerald-300">•</span>
-          <p className="font-medium text-white/80">{renderInlineMarkdown(line.replace(/^[-*]\s+/, ''))}</p>
+          <span className="mt-1" style={{ color: 'var(--slide-accent)' }}>•</span>
+          <p className="font-medium" style={{ color: getPreviewBodyColor(0.86) }}>{renderInlineMarkdown(trimmed.replace(/^[-*]\s+/, ''))}</p>
         </div>,
       );
       continue;
     }
 
-    if (/^\d+\.\s+/.test(line)) {
-      const match = line.match(/^(\d+)\.\s+(.*)$/);
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const match = trimmed.match(/^(\d+)\.\s+(.*)$/);
       blocks.push(
         <div key={`ol-${index}`} className="flex items-start gap-3 text-lg md:text-2xl">
-          <span className="mt-0.5 min-w-6 font-black text-emerald-300">{match?.[1]}.</span>
-          <p className="font-medium text-white/80">{renderInlineMarkdown(match?.[2] ?? line)}</p>
+          <span className="mt-0.5 min-w-6 font-black" style={{ color: 'var(--slide-accent)' }}>{match?.[1]}.</span>
+          <p className="font-medium" style={{ color: getPreviewBodyColor(0.86) }}>{renderInlineMarkdown(match?.[2] ?? trimmed)}</p>
         </div>,
       );
       continue;
     }
 
-    if (line.startsWith('>')) {
+    if (trimmed.startsWith('>')) {
       blocks.push(
-        <blockquote key={`quote-${index}`} className="border-l-4 border-emerald-400/60 bg-black/20 px-4 py-3 text-lg italic text-white/90 md:text-2xl">
-          {renderInlineMarkdown(line.replace(/^>\s?/, ''))}
+        <blockquote
+          key={`quote-${index}`}
+          className="border-l-4 px-4 py-3 text-lg italic md:text-2xl"
+          style={{
+            borderColor: getPreviewAccentColor(0.64),
+            backgroundColor: getPreviewAccentColor(0.12),
+            color: getPreviewBodyColor(0.92),
+          }}
+        >
+          {renderInlineMarkdown(trimmed.replace(/^>\s?/, ''))}
         </blockquote>,
       );
       continue;
     }
 
     blocks.push(
-      <p key={`p-${index}`} className="text-lg font-medium leading-snug text-white/80 md:text-2xl">
-        {renderInlineMarkdown(line)}
+      <p key={`p-${index}`} className="text-lg font-medium leading-snug md:text-2xl" style={{ color: getPreviewBodyColor(0.86) }}>
+        {renderInlineMarkdown(trimmed)}
       </p>,
     );
   }
 
   return blocks;
 };
-
-const parseSlides = (source: string): Slide[] =>
-  splitSlides(source).map(parseSlideBlock);
 
 const getStageIcon = (status: RenderStage['status']) => {
   if (status === 'completed') return <CheckCircle2 size={16} className="text-emerald-400" />;
@@ -342,8 +251,8 @@ export default function VideoDeck() {
   const [markdown, setMarkdown] = useState(DEFAULT_MARKDOWN);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [voice, setVoice] = useState(KOKORO_VOICES[0].id);
-  const [slideTheme, setSlideTheme] = useState<keyof typeof SLIDE_THEMES>('modern');
-  const [transition, setTransition] = useState<(typeof TRANSITIONS)[number]['id']>('fade');
+  const [slideTheme, setSlideTheme] = useState(DEFAULT_SLIDE_THEME);
+  const [transition, setTransition] = useState(DEFAULT_TRANSITION);
   const [showCaptions, setShowCaptions] = useState(true);
   const [isCinemaMode, setIsCinemaMode] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
@@ -353,8 +262,9 @@ export default function VideoDeck() {
   const [loadingSlideIndex, setLoadingSlideIndex] = useState<number | null>(null);
   const [previewAudio, setPreviewAudio] = useState<HTMLAudioElement | null>(null);
 
-  const slides = useMemo(() => parseSlides(markdown), [markdown]);
+  const slides = useMemo(() => parseSlides(markdown) as Slide[], [markdown]);
   const currentSlide = slides[currentSlideIndex] ?? slides[0];
+  const activeTheme = getSlideTheme(slideTheme);
   const isRendering = renderJob?.status === 'queued' || renderJob?.status === 'running';
   const slidesWithEstimates = useMemo(
     () =>
@@ -579,14 +489,17 @@ export default function VideoDeck() {
                   <span className="text-xs font-semibold text-slate-300">Presentation Theme</span>
                   <select
                     value={slideTheme}
-                    onChange={(event) => setSlideTheme(event.target.value as keyof typeof SLIDE_THEMES)}
+                    onChange={(event) => setSlideTheme(event.target.value)}
                     className="w-full rounded-lg border border-white/5 bg-[#1a1a1e] p-2 text-xs outline-none focus:ring-1 focus:ring-emerald-500"
                   >
-                    {Object.keys(SLIDE_THEMES).map((item) => (
-                      <option key={item} value={item}>
-                        {formatLabel(item)}
-                      </option>
-                    ))}
+                    {Object.entries(SLIDE_THEMES).map(([id, theme]) => {
+                      const nextTheme = theme as { name: string };
+                      return (
+                        <option key={id} value={id}>
+                          {nextTheme.name}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 
@@ -594,7 +507,7 @@ export default function VideoDeck() {
                   <span className="text-xs font-semibold text-slate-300">Transition</span>
                   <select
                     value={transition}
-                    onChange={(event) => setTransition(event.target.value as (typeof TRANSITIONS)[number]['id'])}
+                    onChange={(event) => setTransition(event.target.value)}
                     className="w-full rounded-lg border border-white/5 bg-[#1a1a1e] p-2 text-xs outline-none focus:ring-1 focus:ring-emerald-500"
                   >
                     {TRANSITIONS.map((item) => (
@@ -673,7 +586,16 @@ export default function VideoDeck() {
 
         <section className="flex-1 bg-black/40 p-6 md:p-12">
           <div className="mx-auto max-w-[1100px] space-y-8">
-            <div className={`relative aspect-video overflow-hidden rounded-[28px] ring-1 ring-white/5 ${SLIDE_THEMES[slideTheme]}`}>
+            <div
+              className="relative aspect-video overflow-hidden rounded-[28px] ring-1 ring-white/5"
+              style={{
+                backgroundColor: activeTheme.background,
+                color: activeTheme.text,
+                ['--slide-text' as string]: activeTheme.text,
+                ['--slide-accent' as string]: activeTheme.accent,
+                ['--slide-code-background' as string]: activeTheme.previewCodeBackground,
+              }}
+            >
               {currentSlide?.image && (
                 <img
                   src={currentSlide.image}
@@ -681,10 +603,10 @@ export default function VideoDeck() {
                   className="absolute inset-0 h-full w-full object-cover opacity-30"
                 />
               )}
-              <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/20 to-black/70" />
+              <div className="absolute inset-0" style={{ background: activeTheme.overlay }} />
               <div className="relative flex h-full flex-col justify-between p-10 md:p-14">
                 <div className="max-w-4xl space-y-6">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.35em] text-white/60">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.35em]" style={{ color: getPreviewBodyColor(0.62) }}>
                     Slide {currentSlideIndex + 1} / {slides.length}
                   </p>
                   <h1 className="max-w-3xl text-4xl font-black tracking-tight md:text-6xl">{currentSlide?.title}</h1>
@@ -693,7 +615,13 @@ export default function VideoDeck() {
 
                 {showCaptions && currentSlide?.speakerNote && (
                   <div className="flex justify-center px-2">
-                    <p className="max-w-4xl rounded-2xl bg-black/70 px-5 py-3 text-center text-sm font-medium text-white shadow-2xl backdrop-blur-md md:text-lg">
+                    <p
+                      className="max-w-4xl rounded-2xl px-5 py-3 text-center text-sm font-medium shadow-2xl backdrop-blur-md md:text-lg"
+                      style={{
+                        backgroundColor: activeTheme.previewCaptionBackground,
+                        color: activeTheme.text,
+                      }}
+                    >
                       {currentSlide.speakerNote}
                     </p>
                   </div>

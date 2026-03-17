@@ -10,6 +10,12 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion';
+import {
+  DEFAULT_SLIDE_THEME,
+  DEFAULT_TRANSITION,
+  FPS,
+  SLIDE_THEMES,
+} from '../shared/videodeck-core.mjs';
 
 type SlideTheme = 'modern' | 'classic' | 'neon' | 'warm' | 'ocean' | 'editorial' | 'sunset' | 'forest';
 type Transition = 'fade' | 'slide' | 'zoom' | 'rise' | 'flip' | 'drift';
@@ -31,27 +37,15 @@ type VideoProps = {
   totalDurationInFrames: number;
 };
 
-const FPS = 30;
 const WIDTH = 1280;
 const HEIGHT = 720;
 
 const defaultProps: VideoProps = {
   slides: [],
-  slideTheme: 'modern',
-  transition: 'fade',
+  slideTheme: DEFAULT_SLIDE_THEME,
+  transition: DEFAULT_TRANSITION,
   showCaptions: true,
   totalDurationInFrames: FPS * 4,
-};
-
-const themeStyles: Record<SlideTheme, { background: string; text: string; accent: string }> = {
-  modern: { background: '#020617', text: '#f8fafc', accent: '#34d399' },
-  classic: { background: '#f8fafc', text: '#0f172a', accent: '#2563eb' },
-  neon: { background: '#020617', text: '#22d3ee', accent: '#06b6d4' },
-  warm: { background: '#fff7ed', text: '#431407', accent: '#ea580c' },
-  ocean: { background: '#082f49', text: '#ecfeff', accent: '#22d3ee' },
-  editorial: { background: '#f4f4f5', text: '#18181b', accent: '#18181b' },
-  sunset: { background: '#4a044e', text: '#fff7ed', accent: '#fb7185' },
-  forest: { background: '#052e16', text: '#ecfdf5', accent: '#34d399' },
 };
 
 const renderInlineMarkdown = (text: string, color: string) => {
@@ -204,7 +198,7 @@ const SlideScene: React.FC<{
 }> = ({ slide, theme, transition, showCaptions }) => {
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
-  const visualTheme = themeStyles[theme];
+  const visualTheme = SLIDE_THEMES[theme] ?? SLIDE_THEMES[DEFAULT_SLIDE_THEME];
   const entrance = spring({
     fps: FPS,
     frame,
@@ -249,7 +243,7 @@ const SlideScene: React.FC<{
       ) : null}
       <AbsoluteFill
         style={{
-          background: 'linear-gradient(180deg, rgba(15,23,42,0.10) 0%, rgba(15,23,42,0.38) 55%, rgba(2,6,23,0.82) 100%)',
+          background: visualTheme.overlay,
           padding: 64,
           justifyContent: 'space-between',
         }}
@@ -300,8 +294,8 @@ const SlideScene: React.FC<{
               maxWidth: 1040,
               padding: '18px 28px',
               borderRadius: 22,
-              backgroundColor: 'rgba(0,0,0,0.65)',
-              color: '#fff',
+              backgroundColor: visualTheme.previewCaptionBackground,
+              color: visualTheme.text,
               fontSize: 28,
               lineHeight: 1.35,
               textAlign: 'center',

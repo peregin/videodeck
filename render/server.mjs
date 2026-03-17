@@ -1,17 +1,32 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { mkdir, rm } from 'fs/promises';
+import { mkdir, readdir, rm } from 'fs/promises';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, selectComposition } from '@remotion/renderer';
+import {
+  DEFAULT_MAX_COMPLETED_JOBS,
+  DEFAULT_MAX_RENDER_DIRECTORIES,
+  DEFAULT_SLIDE_THEME,
+  DEFAULT_STILL_SECONDS,
+  DEFAULT_TRANSITION,
+  FPS,
+  estimateSlideSeconds,
+  getThemeId,
+  getTransition,
+  isValidTheme,
+  isValidTransition,
+  isValidVoice,
+  parseJobTimestamp,
+  parseSlides,
+  toPercent,
+} from '../shared/videodeck-core.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, '..');
 const renderEntry = path.join(projectRoot, 'render', 'index.tsx');
 const rendersRoot = path.join(projectRoot, 'renders');
 const defaultPort = Number(process.env.PORT || 3210);
-const fps = 30;
-const defaultStillSeconds = 3;
 
 const jobs = new Map();
 let kokoroPromise = null;
@@ -23,91 +38,6 @@ const stageTemplate = () => [
   { id: 'render', label: 'Render Final Video', status: 'pending', message: 'Waiting for video render.', progress: 0 },
 ];
 
-const splitSlides = (source) => {
-  const slides = [];
-  const current = [];
-  let inCodeFence = false;
-
-  for (const rawLine of source.split('\n')) {
-    const trimmed = rawLine.trim();
-    if (trimmed.startsWith('```')) {
-      inCodeFence = !inCodeFence;
-    }
-
-    if (!inCodeFence && trimmed === '---') {
-      const block = current.join('\n').trim();
-      if (block) slides.push(block);
-      current.length = 0;
-      continue;
-    }
-
-    current.push(rawLine);
-  }
-
-  const block = current.join('\n').trim();
-  if (block) slides.push(block);
-  return slides;
-};
-
-const parseSlideBlock = (block) => {
-  const lines = block.split('\n');
-  let inCodeFence = false;
-  let title = 'Untitled Slide';
-  let titleIndex = -1;
-  let speakerNote = '';
-  let speakerNoteIndex = -1;
-  let image = null;
-  let imageIndex = -1;
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const trimmed = lines[index].trim();
-
-    if (trimmed.startsWith('```')) {
-      inCodeFence = !inCodeFence;
-      continue;
-    }
-
-    if (inCodeFence) continue;
-
-    if (titleIndex === -1 && /^#+\s+/.test(trimmed)) {
-      title = trimmed.replace(/^#+\s+/, '').trim();
-      titleIndex = index;
-      continue;
-    }
-
-    if (imageIndex === -1) {
-      const imageMatch = trimmed.match(/!\[.*\]\((.*)\)/);
-      if (imageMatch) {
-        image = imageMatch[1];
-        imageIndex = index;
-        continue;
-      }
-    }
-
-    if (speakerNoteIndex === -1) {
-      const speakerNoteMatch = trimmed.match(/^Speaker Note:\s*(.*)$/i);
-      if (speakerNoteMatch) {
-        speakerNote = speakerNoteMatch[1].trim();
-        speakerNoteIndex = index;
-      }
-    }
-  }
-
-  const body = lines
-    .filter((_, index) => index !== titleIndex && index !== imageIndex && index !== speakerNoteIndex)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  return {
-    title,
-    body,
-    image,
-    speakerNote,
-  };
-};
-
-const parseSlides = (source) => splitSlides(source).map(parseSlideBlock);
-
 const createJob = () => {
   const jobId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const job = {
@@ -118,6 +48,7 @@ const createJob = () => {
     stages: stageTemplate(),
   };
   jobs.set(jobId, job);
+  pruneCompletedJobs();
   return job;
 };
 
@@ -150,19 +81,35 @@ const getKokoro = async () => {
   return kokoroPromise;
 };
 
-const estimateSlideSeconds = (slide) => {
-  if (slide.speakerNote) {
-    const words = slide.speakerNote.split(/\s+/).filter(Boolean).length;
-    return Math.max(defaultStillSeconds, Math.ceil(words / 2.6));
+const pruneCompletedJobs = () => {
+  const terminalJobs = [...jobs.values()]
+    .filter((job) => job.status === 'completed' || job.status === 'failed')
+    .sort((left, right) => parseJobTimestamp(left.jobId) - parseJobTimestamp(right.jobId));
+
+  const excess = terminalJobs.length - DEFAULT_MAX_COMPLETED_JOBS;
+  if (excess <= 0) {
+    return;
   }
 
-  const bodyWords = slide.body.join(' ').split(/\s+/).filter(Boolean).length;
-  return Math.max(defaultStillSeconds, Math.ceil(bodyWords / 3));
+  for (const job of terminalJobs.slice(0, excess)) {
+    jobs.delete(job.jobId);
+  }
 };
 
-const toPercent = (value) => {
-  const normalized = value <= 1 ? value * 100 : value;
-  return Math.max(0, Math.min(100, Math.round(normalized)));
+const pruneRenderOutputs = async () => {
+  const entries = await readdir(rendersRoot, { withFileTypes: true });
+  const directories = entries
+    .filter((entry) => entry.isDirectory())
+    .sort((left, right) => parseJobTimestamp(left.name) - parseJobTimestamp(right.name));
+
+  const excess = directories.length - DEFAULT_MAX_RENDER_DIRECTORIES;
+  if (excess <= 0) {
+    return;
+  }
+
+  await Promise.all(
+    directories.slice(0, excess).map((entry) => rm(path.join(rendersRoot, entry.name), { recursive: true, force: true })),
+  );
 };
 
 const getBundleUrl = async (jobId) => {
@@ -209,19 +156,26 @@ const runRenderJob = async (jobId, payload) => {
     updateStage(jobId, 'voice', {
       status: 'running',
       progress: 5,
-      message: 'Loading Kokoro model.',
+      message: 'Checking narration requirements.',
     });
 
-    const kokoro = await getKokoro();
+    const hasNarration = slides.some((slide) => slide.speakerNote);
+    const kokoro = hasNarration ? await getKokoro() : null;
+    if (!hasNarration) {
+      updateStage(jobId, 'voice', {
+        status: 'completed',
+        progress: 100,
+        message: 'No speaker notes found. Skipping narration synthesis.',
+      });
+    }
 
     const renderedSlides = [];
     for (let index = 0; index < slides.length; index += 1) {
       const slide = slides[index];
-      const hasNarration = Boolean(slide.speakerNote);
       let audioUrl = null;
-      let durationInFrames = defaultStillSeconds * fps;
+      let durationInFrames = DEFAULT_STILL_SECONDS * FPS;
 
-      if (hasNarration) {
+      if (slide.speakerNote) {
         updateStage(jobId, 'voice', {
           status: 'running',
           progress: Math.round(((index + 0.2) / slides.length) * 100),
@@ -233,11 +187,11 @@ const runRenderJob = async (jobId, payload) => {
         await audio.save(audioPath);
 
         const seconds = audio.audio.length / audio.sampling_rate;
-        durationInFrames = Math.max(Math.round((seconds + 0.6) * fps), defaultStillSeconds * fps);
+        durationInFrames = Math.max(Math.round((seconds + 0.6) * FPS), DEFAULT_STILL_SECONDS * FPS);
         audioUrl = `http://localhost:${defaultPort}/renders/${jobId}/slide-${index}.wav`;
       } else {
         const estimatedSeconds = estimateSlideSeconds(slide);
-        durationInFrames = estimatedSeconds * fps;
+        durationInFrames = estimatedSeconds * FPS;
       }
 
       renderedSlides.push({
@@ -246,18 +200,22 @@ const runRenderJob = async (jobId, payload) => {
         durationInFrames,
       });
 
-      updateStage(jobId, 'voice', {
-        status: 'running',
-        progress: Math.round(((index + 1) / slides.length) * 100),
-        message: `Completed Kokoro narration for ${index + 1} / ${slides.length} slides.`,
-      });
+      if (hasNarration) {
+        updateStage(jobId, 'voice', {
+          status: 'running',
+          progress: Math.round(((index + 1) / slides.length) * 100),
+          message: `Completed Kokoro narration for ${index + 1} / ${slides.length} slides.`,
+        });
+      }
     }
 
-    updateStage(jobId, 'voice', {
-      status: 'completed',
-      progress: 100,
-      message: 'Kokoro narration is ready.',
-    });
+    if (hasNarration) {
+      updateStage(jobId, 'voice', {
+        status: 'completed',
+        progress: 100,
+        message: 'Kokoro narration is ready.',
+      });
+    }
 
     updateStage(jobId, 'compose', {
       status: 'running',
@@ -268,8 +226,8 @@ const runRenderJob = async (jobId, payload) => {
     const totalDurationInFrames = renderedSlides.reduce((sum, slide) => sum + slide.durationInFrames, 0);
     const inputProps = {
       slides: renderedSlides,
-      slideTheme: payload.slideTheme,
-      transition: payload.transition,
+      slideTheme: getThemeId(payload.slideTheme),
+      transition: getTransition(payload.transition),
       showCaptions: payload.showCaptions,
       totalDurationInFrames,
     };
@@ -320,6 +278,8 @@ const runRenderJob = async (jobId, payload) => {
     if (!job) return;
     job.videoUrl = `/renders/${jobId}/videodeck.mp4`;
     setJobStatus(jobId, 'completed', 'Render complete. Your video is ready.');
+    pruneCompletedJobs();
+    await pruneRenderOutputs();
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Render failed.';
     setJobStatus(jobId, 'failed', message);
@@ -331,16 +291,12 @@ const runRenderJob = async (jobId, payload) => {
       status: 'failed',
       message,
     });
+    pruneCompletedJobs();
   }
 };
 
 const attachRenderRoutes = (app) => {
   app.use(express.json({ limit: '2mb' }));
-  app.use((_, response, next) => {
-    response.setHeader('Access-Control-Allow-Origin', '*');
-    response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    next();
-  });
   app.use('/renders', express.static(rendersRoot));
 
   app.get('/api/render/:jobId', (request, response) => {
@@ -363,6 +319,21 @@ const attachRenderRoutes = (app) => {
 
     if (typeof voice !== 'string' || !voice.trim()) {
       response.status(400).send('`voice` is required.');
+      return;
+    }
+
+    if (!isValidVoice(voice)) {
+      response.status(400).send('`voice` must be one of the supported Kokoro voices.');
+      return;
+    }
+
+    if (slideTheme !== undefined && !isValidTheme(slideTheme)) {
+      response.status(400).send(`\`slideTheme\` must be one of the supported themes. Default is \`${DEFAULT_SLIDE_THEME}\`.`);
+      return;
+    }
+
+    if (transition !== undefined && !isValidTransition(transition)) {
+      response.status(400).send(`\`transition\` must be one of the supported transitions. Default is \`${DEFAULT_TRANSITION}\`.`);
       return;
     }
 
@@ -391,6 +362,11 @@ const attachRenderRoutes = (app) => {
       return;
     }
 
+    if (!isValidVoice(voice)) {
+      response.status(400).send('`voice` must be one of the supported Kokoro voices.');
+      return;
+    }
+
     try {
       const kokoro = await getKokoro();
       const audio = await kokoro.generate(text, { voice, speed: 1 });
@@ -411,6 +387,7 @@ const createRenderApp = () => {
 
 const startRenderServer = async (port = defaultPort) => {
   await mkdir(rendersRoot, { recursive: true });
+  await pruneRenderOutputs();
   const app = createRenderApp();
 
   return app.listen(port, () => {
