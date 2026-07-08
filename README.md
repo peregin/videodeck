@@ -69,8 +69,10 @@ The first narration generation can take longer because Kokoro needs to load mode
 ## Install
 
 ```bash
-npm install
+npm ci
 ```
+
+Use `npm install` only when intentionally updating dependencies and the lockfile.
 
 ## Run In Development
 
